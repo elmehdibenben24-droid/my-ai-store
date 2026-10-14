@@ -1,172 +1,9 @@
-#!/usr/bin/env node
-/**
- * =====================================================================
- * ALL-IN-ONE SERVICES & AI STORE (متجر الخدمات الرقمية والذكاء الاصطناعي)
- * متعدد اللغات (عربي، فرنسي، إنجليزي) + تكامل مع Google Gemini API
- * =====================================================================
- */
-
-'use strict';
-
-const http = require('http');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
-
-const PORT = process.env.PORT || 3000;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-
-// ترجمات واجهات المتجر (متعدد اللغات)
-const translations = {
-  ar: {
-    title: "متجر الخدمات الرقمية والذكاء الاصطناعي",
-    subtitle: "احصل على محتوى ذكي واحترافي بضغطة زر واحدة",
-    selectService: "اختر الخدمة المطلوبة:",
-    services: {
-      seo: "محسن محركات البحث (SEO)",
-      copywriting: "كتابة الإعلانات التسويقية",
-      translator: "الترجمة الاحترافية",
-      coder: "مساعد البرمجة وتصحيح الأكواد"
-    },
-    placeholder: "اكتب طلبك أو تفاصيل مشروعك هنا...",
-    generateBtn: "توليد بالذكاء الاصطناعي 🚀",
-    loading: "جاري المعالجة بواسطة Gemini AI...",
-    resultTitle: "النتيجة المولدة:",
-    footer: "جميع الحقوق محفوظة © 2026 - AI Store"
-  },
-  fr: {
-    title: "Boutique de Services Numériques & IA",
-    subtitle: "Obtenez du contenu intelligent et professionnel en un clic",
-    selectService: "Sélectionnez le service souhaité :",
-    services: {
-      seo: "Optimisation SEO",
-      copywriting: "Rédaction Publicitaire",
-      translator: "Traduction Professionnelle",
-      coder: "Assistant de Programmation & Code"
-    },
-    placeholder: "Écrivez votre demande ou les détails de votre projet ici...",
-    generateBtn: "Générer avec l'IA 🚀",
-    loading: "Traitement en cours par Gemini AI...",
-    resultTitle: "Résultat généré :",
-    footer: "Tous droits réservés © 2026 - AI Store"
-  },
-  en: {
-    title: "Digital Services & AI Store",
-    subtitle: "Get smart and professional content with a single click",
-    selectService: "Select the required service:",
-    services: {
-      seo: "SEO Content Optimizer",
-      copywriting: "Marketing Copywriting",
-      translator: "Professional Translator",
-      coder: "Coding & Debugging Assistant"
-    },
-    placeholder: "Type your request or project details here...",
-    generateBtn: "Generate with AI 🚀",
-    loading: "Processing with Gemini AI...",
-    resultTitle: "Generated Result:",
-    footer: "All rights reserved © 2026 - AI Store"
-  }
-};
-
-// دالة الاتصال بـ Google Gemini API
-function callGeminiAPI(promptText, lang, callback) {
-  if (!GEMINI_API_KEY) {
-    return callback("خطأ: مفتاح GEMINI_API_KEY غير مُعرّف في إعدادات البيئة (Environment Variables).");
-  }
-
-  const systemInstructions = {
-    ar: "أنت مساعد ذكي واحترافي لتقديم الخدمات الرقمية باللغة العربية.",
-    fr: "Vous êtes un assistant IA professionnel pour fournir des services numériques en français.",
-    en: "You are a professional AI assistant providing digital services in English."
-  };
-
-  const data = JSON.stringify({
-    contents: [
-      {
-        parts: [
-          { text: (systemInstructions[lang] || systemInstructions.en) + "\n\n" + promptText }
-        ]
-      }
-    ]
-  });
-
-  const options = {
-    hostname: 'generativelanguage.googleapis.com',
-    path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(data)
-    }
-  };
-
-  const req = https.request(options, (res) => {
-    let body = '';
-    res.on('data', chunk => body += chunk);
-    res.on('end', () => {
-      try {
-        const json = JSON.parse(body);
-        if (json.candidates && json.candidates[0].content.parts[0].text) {
-          callback(null, json.candidates[0].content.parts[0].text);
-        } else if (json.error) {
-          callback(json.error.message || "خطأ من سيرفر جوجل.");
-        } else {
-          callback("لم يتم استلام رد صالح من الذكاء الاصطناعي.");
-        }
-      } catch (e) {
-        callback("خطأ في تحليل رد الخادم.");
-      }
-    });
-  });
-
-  req.on('error', (e) => {
-    callback("خطأ في الاتصال بشبكة الإنترنت: " + e.message);
-  });
-
-  req.write(data);
-  req.end();
-}
-
-// السيرفر الرئيسي
-const server = http.createServer((req, res) => {
-  const urlParams = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = urlParams.pathname;
-
-  // معالجة طلب توليد المحتوى (API Endpoint)
-  if (pathname === '/api/generate' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try {
-        const parsed = JSON.parse(body);
-        const prompt = parsed.prompt || '';
-        const lang = parsed.lang || 'ar';
-
-        callGeminiAPI(prompt, lang, (err, result) => {
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          if (err) {
-            res.end(JSON.stringify({ success: false, error: err }));
-          } else {
-            res.end(JSON.stringify({ success: true, result: result }));
-          }
-        });
-      } catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: false, error: "بيانات غير صالحة." }));
-      }
-    });
-    return;
-  }
-
-  // واجهة الموقع (HTML مدمجة بتصميم أنيق ومتعدد اللغات)
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(`
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" id="htmlTag">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Services Store</title>
+    <title>AI Services & Subscriptions Store</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -176,8 +13,8 @@ const server = http.createServer((req, res) => {
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between">
 
     <!-- شريط التنقل وتغيير اللغات -->
-    <header class="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center max-w-4xl mx-auto w-full rounded-b-2xl shadow-lg">
-        <h1 class="text-xl font-bold text-indigo-400" id="mainTitle">متجر الخدمات الرقمية</h1>
+    <header class="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center max-w-5xl mx-auto w-full rounded-b-2xl shadow-lg">
+        <h1 class="text-xl font-bold text-indigo-400" id="mainTitle">متجر خدمات واشتراكات الذكاء الاصطناعي</h1>
         <div class="flex gap-2">
             <button onclick="setLang('ar')" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-sm font-medium cursor-pointer transition">العربية</button>
             <button onclick="setLang('fr')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded text-sm font-medium cursor-pointer transition">Français</button>
@@ -186,166 +23,70 @@ const server = http.createServer((req, res) => {
     </header>
 
     <!-- المحتوى الرئيسي -->
-    <main class="max-w-2xl mx-auto p-6 w-full flex-grow">
+    <main class="max-w-4xl mx-auto p-6 w-full flex-grow">
         <div class="text-center my-8">
-            <h2 class="text-3xl font-extrabold mb-3 text-white" id="siteSubtitle">احصل على محتوى ذكي واحترافي</h2>
-            <p class="text-slate-400 text-sm" id="selectServiceText">اختر الخدمة المطلوبة واكتب طلبك:</p>
+            <h2 class="text-3xl font-extrabold mb-3 text-white" id="siteSubtitle">اختر الخدمة أو الاشتراك الرقمي المناسب لك</h2>
+            <p class="text-slate-400 text-sm" id="selectServiceText">كل خدمة مجهزة بخانتها الخاصة للحصول على نتيجة احترافية فورية:</p>
         </div>
 
-        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl space-y-4">
-            <!-- اختيار الخدمة -->
-            <div>
-                <label class="block text-sm font-medium text-slate-300 mb-2" id="labelService">نوع الخدمة:</label>
-                <select id="serviceType" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-indigo-500">
-                    <option value="seo">محسن محركات البحث (SEO)</option>
-                    <option value="copywriting">كتابة الإعلانات التسويقية</option>
-                    <option value="translator">الترجمة الاحترافية</option>
-                    <option value="coder">مساعد البرمجة وتصحيح الأكواد</option>
-                </select>
-            </div>
-
-            <!-- إدخال الطلب -->
-            <div>
-                <label class="block text-sm font-medium text-slate-300 mb-2" id="labelPrompt">تفاصيل الطلب:</label>
-                <textarea id="promptInput" rows="4" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-indigo-500" placeholder="اكتب طلبك هنا..."></textarea>
-            </div>
-
-            <!-- زر التوليد -->
-            <button onclick="generateContent()" id="submitBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition cursor-pointer">
-                توليد بالذكاء الاصطناعي 🚀
-            </button>
-        </div>
-
-        <!-- صندوق النتائج -->
-        <div id="resultBox" class="mt-8 hidden bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-            <h3 class="text-lg font-bold text-indigo-400 mb-3" id="resultTitleText">النتيجة المولدة:</h3>
-            <div id="resultOutput" class="text-slate-300 whitespace-pre-wrap bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm leading-relaxed"></div>
-        </div>
-    </main>
-
-    <!-- الفوتر -->
-    <footer class="text-center py-6 text-slate-500 text-xs border-t border-slate-900" id="footerText">
-        جميع الحقوق محفوظة © 2026 - AI Store
-    </footer>
-
-    <script>
-        const dict = {
-            ar: {
-                mainTitle: "متجر الخدمات الرقمية",
-                siteSubtitle: "احصل على محتوى ذكي واحترافي بضغطة زر",
-                selectServiceText: "اختر الخدمة المطلوبة واكتب طلبك:",
-                labelService: "نوع الخدمة:",
-                labelPrompt: "تفاصيل الطلب:",
-                submitBtn: "توليد بالذكاء الاصطناعي 🚀",
-                resultTitleText: "النتيجة المولدة:",
-                loading: "جاري المعالجة بواسطة Gemini AI...",
-                services: [
-                    "محسن محركات البحث (SEO)",
-                    "كتابة الإعلانات التسويقية",
-                    "الترجمة الاحترافية",
-                    "مساعد البرمجة وتصحيح الأكواد"
-                ]
-            },
-            fr: {
-                mainTitle: "Boutique de Services Numériques",
-                siteSubtitle: "Obtenez du contenu intelligent en un clic",
-                selectServiceText: "Sélectionnez le service et écrivez votre demande :",
-                labelService: "Type de service :",
-                labelPrompt: "Détails de la demande :",
-                submitBtn: "Générer avec l'IA 🚀",
-                resultTitleText: "Résultat généré :",
-                loading: "Traitement en cours par Gemini AI...",
-                services: [
-                    "Optimisation SEO",
-                    "Rédaction Publicitaire",
-                    "Traduction Professionnelle",
-                    "Assistant de Programmation & Code"
-                ]
-            },
-            en: {
-                mainTitle: "Digital Services Store",
-                siteSubtitle: "Get smart and professional content in one click",
-                selectServiceText: "Select the required service and type your request:",
-                labelService: "Service Type:",
-                labelPrompt: "Request Details:",
-                submitBtn: "Generate with AI 🚀",
-                resultTitleText: "Generated Result:",
-                loading: "Processing with Gemini AI...",
-                services: [
-                    "SEO Content Optimizer",
-                    "Marketing Copywriting",
-                    "Professional Translator",
-                    "Coding & Debugging Assistant"
-                ]
-            }
-        };
-
-        let currentLang = 'ar';
-
-        function setLang(lang) {
-            currentLang = lang;
-            const t = dict[lang];
-            const htmlTag = document.getElementById('htmlTag');
+        <!-- شبكة الخدمات (Grid) - كل خدمة في بطاقة وخانة خاصة منظمة -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             
-            htmlTag.setAttribute('lang', lang);
-            htmlTag.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+            <!-- 1. بطاقة محسن محركات البحث SEO -->
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="text-indigo-400 font-bold text-lg mb-2" id="card1Title">🔍 محسن محركات البحث (SEO)</div>
+                    <p class="text-slate-400 text-xs mb-4" id="card1Desc">أدخل عنوان مقالك أو الكلمات المفتاحية لتوليد محتوى متوافق مع محركات البحث.</p>
+                    <textarea id="prompt_seo" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 mb-3" placeholder="اكتب موضوع المقال أو الكلمات المفتاحية..."></textarea>
+                </div>
+                <button onclick="generateService('seo')" id="btn_seo" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow transition cursor-pointer">
+                    توليد محتوى SEO 🚀
+                </button>
+            </div>
 
-            document.getElementById('mainTitle').innerText = t.mainTitle;
-            document.getElementById('siteSubtitle').innerText = t.siteSubtitle;
-            document.getElementById('selectServiceText').innerText = t.selectServiceText;
-            document.getElementById('labelService').innerText = t.labelService;
-            document.getElementById('labelPrompt').innerText = t.labelPrompt;
-            document.getElementById('submitBtn').innerText = t.submitBtn;
-            document.getElementById('resultTitleText').innerText = t.resultTitleText;
-            document.getElementById('footerText').innerText = "جميع الحقوق محفوظة © 2026 - AI Store";
+            <!-- 2. بطاقة كتابة الإعلانات التسويقية -->
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="text-indigo-400 font-bold text-lg mb-2" id="card2Title">✍️ كتابة الإعلانات التسويقية</div>
+                    <p class="text-slate-400 text-xs mb-4" id="card2Desc">أنشئ إعلانات جذابة لمنتجاتك على منصات التواصل الاجتماعي.</p>
+                    <textarea id="prompt_copywriting" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 mb-3" placeholder="صف منتجك أو خدمتك والجمهور المستهدف..."></textarea>
+                </div>
+                <button onclick="generateService('copywriting')" id="btn_copywriting" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow transition cursor-pointer">
+                    توليد إعلان تسويقي 🚀
+                </button>
+            </div>
 
-            const select = document.getElementById('serviceType');
-            for(let i=0; i<select.options.length; i++){
-                select.options[i].text = t.services[i];
-            }
-        }
+            <!-- 3. بطاقة الترجمة الاحترافية -->
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="text-indigo-400 font-bold text-lg mb-2" id="card3Title">🌐 الترجمة الاحترافية</div>
+                    <p class="text-slate-400 text-xs mb-4" id="card3Desc">ترجمة دقيقة واحترافية للنصوص بين العربية، الفرنسية، والإنجليزية.</p>
+                    <textarea id="prompt_translator" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 mb-3" placeholder="أدخل النص المراد ترجمته وحدد اللغة..."></textarea>
+                </div>
+                <button onclick="generateService('translator')" id="btn_translator" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow transition cursor-pointer">
+                    ترجمة فورية 🚀
+                </button>
+            </div>
 
-        async function generateContent() {
-            const serviceType = document.getElementById('serviceType').value;
-            const promptInput = document.getElementById('promptInput').value;
-            const resultBox = document.getElementById('resultBox');
-            const resultOutput = document.getElementById('resultOutput');
-            const submitBtn = document.getElementById('submitBtn');
+            <!-- 4. بطاقة مساعد البرمجة وتصحيح الأكواد -->
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="text-indigo-400 font-bold text-lg mb-2" id="card4Title">💻 مساعد البرمجة والأكواد</div>
+                    <p class="text-slate-400 text-xs mb-4" id="card4Desc">اكتب الكود الذي تحتاجه أو الكود الذي يحتوي على خطأ لتصحيحه.</p>
+                    <textarea id="prompt_coder" rows="3" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 mb-3" placeholder="اشرح المشكلة البرمجية أو الكود..."></textarea>
+                </div>
+                <button onclick="generateService('coder')" id="btn_coder" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow transition cursor-pointer">
+                    تحليل وتصحيح الكود 🚀
+                </button>
+            </div>
 
-            if (!promptInput.trim()) {
-                alert(currentLang === 'ar' ? 'المرجو كتابة تفاصيل الطلب أولاً!' : 'Please enter request details first!');
-                return;
-            }
-
-            resultBox.classList.remove('hidden');
-            resultOutput.innerText = dict[currentLang].loading;
-            submitBtn.disabled = true;
-
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: `الخدمة المطلوبة: ${serviceType}. التفاصيل: ${promptInput}`, lang: currentLang })
-                });
-
-                const data = await response.json();
-                if (data.success) {
-                    resultOutput.innerText = data.result;
-                } else {
-                    resultOutput.innerText = "خطأ: " + (data.error || "حدث خطأ غير متوقع.");
-                }
-            } catch (err) {
-                resultOutput.innerText = "فشل الاتصال بالخادم.";
-            } finally {
-                submitBtn.disabled = false;
-            }
-        }
-    </script>
-</body>
-</html>
-  `);
-});
-
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+            <!-- 5. بطاقة توليد الأفكار الإبداعية للمشاريع -->
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl flex flex-col justify-between md:col-span-2">
+                <div>
+                    <div class="text-indigo-400 font-bold text-lg mb-2" id="card5Title">💡 توليد الأفكار الإبداعية للمشاريع الرقمية</div>
+                    <p class="text-slate-400 text-xs mb-4" id="card5Desc">احصل على أفكار مبتكرة لمشاريع رقمية ومتاجر إلكترونية مربحة.</p>
+                    <textarea id="prompt_ideas" rows="2" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 mb-3" placeholder="حدد المجال الذي تهتم به (مثلاً: التجارة الإلكترونية، الذكاء الاصطناعي...)..."></textarea>
+                </div>
+                <button onclick="generateService('ideas')" id="btn_ideas" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow transition cursor-pointer">
+                    توليد أفكار مشاريع 🚀
+                </
